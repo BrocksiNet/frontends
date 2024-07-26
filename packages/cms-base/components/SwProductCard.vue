@@ -9,7 +9,7 @@ import {
   getProductFromPrice,
   getSmallestThumbnailUrl,
 } from "@shopware-pwa/helpers-next";
-import { toRefs, type Ref, computed, ref } from "vue";
+import { toRefs, computed, ref } from "vue";
 import { defu } from "defu";
 import SwListingProductPrice from "./SwListingProductPrice.vue";
 import {
@@ -86,12 +86,12 @@ const toggleWishlistProduct = async () => {
     if (!isInWishlist.value) {
       await addToWishlist();
       pushSuccess(
-        `${props.product?.translated?.name} ${translations.product.addedToWishlist}`,
+        `${props.product?.translated.name} ${translations.product.addedToWishlist}`,
       );
     } else {
       await removeFromWishlist();
       pushError(
-        `${props.product?.translated?.name} ${translations.product.removedFromTheWishlist}`,
+        `${props.product?.translated.name} ${translations.product.removedFromTheWishlist}`,
       );
     }
   } catch (error) {
@@ -100,7 +100,7 @@ const toggleWishlistProduct = async () => {
         ? `${translations.product.reason}: ${error.details.errors?.[0]?.detail}`
         : "";
       return pushError(
-        `${props.product?.translated?.name} ${translations.product.cannotAddToWishlist}\n${reason}`,
+        `${props.product?.translated.name} ${translations.product.cannotAddToWishlist}\n${reason}`,
         {
           timeout: 5000,
         },
@@ -114,15 +114,12 @@ const toggleWishlistProduct = async () => {
 const addToCartProxy = async () => {
   await addToCart();
   pushSuccess(
-    `${props.product?.translated?.name} ${translations.product.addedToCart}`,
+    `${props.product?.translated.name} ${translations.product.addedToCart}`,
   );
 };
 
 const fromPrice = getProductFromPrice(props.product);
 const { getUrlPrefix } = useUrlResolver();
-const ratingAverage: Ref<number> = computed(() =>
-  props.product.ratingAverage ? Math.round(props.product.ratingAverage) : 0,
-);
 
 const imageElement = ref(null);
 const { height } = useElementSize(imageElement);
@@ -135,7 +132,7 @@ function roundUp(num: number) {
 const srcPath = computed(() => {
   return `${getSmallestThumbnailUrl(
     product.value?.cover?.media,
-  )}?&height=${roundUp(height.value)}&fit=crop`;
+  )}?&height=${roundUp(height.value)}&fit=cover`;
 });
 </script>
 
@@ -184,9 +181,9 @@ const srcPath = computed(() => {
       aria-label="Add to wishlist"
       type="button"
       :disabled="isLoading"
-      @click="toggleWishlistProduct"
       class="absolute bg-transparent top-2 right-2 hover:animate-count-infinite hover:animate-heart-beat"
       data-testid="product-box-toggle-wishlist-button"
+      @click="toggleWishlistProduct"
     >
       <client-only>
         <div

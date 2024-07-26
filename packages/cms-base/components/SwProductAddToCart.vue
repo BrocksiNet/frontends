@@ -34,7 +34,7 @@ const { addToCart, quantity } = useAddToCart(product);
 const addToCartProxy = async () => {
   await addToCart();
   pushSuccess(
-    `${props.product?.translated?.name} ${translations.product.addedToCart}`,
+    `${props.product?.translated.name} ${translations.product.addedToCart}`,
   );
 };
 </script>
@@ -45,8 +45,8 @@ const addToCartProxy = async () => {
       <label for="qty" class="text-sm">{{ translations.product.qty }}</label>
       <input
         id="qty"
-        type="number"
         v-model="quantity"
+        type="number"
         :min="product.minPurchase || 1"
         :max="product.calculatedMaxPurchase"
         :step="product.purchaseSteps || 1"
