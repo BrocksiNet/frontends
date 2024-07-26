@@ -1766,7 +1766,7 @@ export type Schemas = {
     field: string;
     /** @enum {string} */
     type: "equals";
-    value: string | number | boolean | null;
+    value: string | string[] | number | boolean | null;
   };
   Filters: (
     | components["schemas"]["SimpleFilter"]
@@ -5255,7 +5255,7 @@ export type Schemas = {
     field: string;
     /** @enum {string} */
     type: "contains" | "equalsAny" | "prefix" | "suffix";
-    value: string;
+    value: string | string[];
   };
   Sitemap: components["schemas"]["ArrayStruct"] & {
     /** Format: date-time */
