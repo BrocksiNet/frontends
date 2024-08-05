@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref, unref, type Ref, watch } from "vue";
+import { onMounted, ref, unref, type Ref, ComputedRef, watch } from "vue";
 import type {
   Schemas,
   operations,
@@ -14,11 +14,13 @@ import {
   useCategory,
 } from "#imports";
 import {
-  RequestBodyPreview,
   CollapseJsonPretty,
   HelpDialog,
-  ShippingFree,
+  PriceFilter,
   ProductCard,
+  RatingFilter,
+  RequestBodyPreview,
+  ShippingFreeFilter,
 } from "@/components/shopware";
 import {
   Button,
@@ -41,11 +43,11 @@ import {
 const categoryUuid = "e5320bfe6ff04505a442fb5843664947";
 
 const { search: categorySearch } = useCategorySearch();
-const categoryResponse = ref();
+const categoryResponse = ref<Schemas["Category"] | null>(null);
 categoryResponse.value = await categorySearch(categoryUuid, {
   withCmsAssociations: true,
 });
-
+// @ts-ignore-next-line
 useCategory(categoryResponse);
 createCategoryListingContext();
 
@@ -55,6 +57,11 @@ const page = ref(1);
 const pageMax = ref(1);
 const limit = ref(15);
 const order = ref("name-asc");
+const price = ref({ min: undefined, max: undefined } as {
+  min: number | undefined;
+  max: number | undefined;
+});
+const rating = ref(undefined) as Ref<number | undefined>;
 const reduceAggregations = ref("false");
 const totalCountMode: Ref<Schemas["TotalCountMode"]> = ref("exact");
 const dataViewMode: Ref<"composable" | "listing"> = ref("listing");
@@ -200,7 +207,9 @@ const generatePropertiesMultiFilter = () => {
 };
 
 const generateShortcutFilter = (code: string = "properties") => {
-  const initialFilters = unref(getInitialFilters) as ExtendedListingFilter[];
+  const initialFilters = unref(
+    getInitialFilters,
+  ) as unknown as ExtendedListingFilter[];
   const properties: string[] = [];
   initialFilters.forEach((filter) => {
     if (filter.selectedOptions && filter.code === code) {
@@ -231,10 +240,52 @@ const generateBody = () => {
       properties: generateShortcutFilter(),
       manufacturer: generateShortcutFilter("manufacturer"),
     };
+
+    if (activeFilters.value["shipping-free"] !== true) {
+      body = { ...body, "shipping-free-filter": false };
+    }
+
+    if (activeFilters.value["rating"] !== true) {
+      body = { ...body, "rating-filter": false };
+    } else {
+      if (rating.value) {
+        body = { ...body, rating: rating.value };
+      }
+    }
+
+    if (activeFilters.value["price"] !== true) {
+      body = { ...body, "price-filter": false };
+    } else {
+      if (price.value.min) {
+        body = { ...body, "min-price": price.value.min };
+      }
+      if (price.value.max) {
+        body = { ...body, "max-price": price.value.max };
+      }
+    }
+
+    if (activeFilters.value["manufacturer"] !== true) {
+      body = { ...body, "manufacturer-filter": false };
+    }
+
+    if (activeFilters.value["shipping-free"] && shippingFreeValue.value) {
+      body = { ...body, "shipping-free": shippingFreeValue.value };
+    }
   }
 
   if (reduceAggregations.value === "true") {
     body = { ...body, "reduce-aggregations": "true" };
+  }
+
+  if (productAssociations.value) {
+    const associations: { [key: string]: any } = {};
+    const selectedAssociations = Object.fromEntries(
+      Object.entries(productAssociations.value).filter(([_, value]) => value),
+    );
+    for (const key in selectedAssociations) {
+      associations[key] = {};
+    }
+    body = { ...body, associations };
   }
 
   return body;
@@ -277,9 +328,14 @@ watch(
 
 onMounted(async () => {
   setInitialListing(
-    unref(getCurrentListing) as Schemas["ProductListingResult"],
+    unref(getCurrentListing) as unknown as Schemas["ProductListingResult"],
   );
-  const initalTotal = unref(getInitialListing)?.total;
+  const initalListing = unref(
+    getInitialListing,
+  ) as unknown as Schemas["ProductListingResult"] & {
+    total?: number;
+  };
+  const initalTotal = initalListing.total;
   if (initalTotal) {
     pageMax.value = Math.ceil(initalTotal / unref(limit) || 1);
   }
@@ -290,7 +346,9 @@ const createInitalMultiFilterConfig = () => {
   const multiFilterConfig: MultiFilterConfig[] = [];
   for (let i = 0; i < unref(multiFilterGroups) + 1; i++) {
     if (i === 0) {
-      const filters = unref(getInitialFilters) as ExtendedListingFilter[];
+      const filters = unref(
+        getInitialFilters,
+      ) as unknown as ExtendedListingFilter[];
       multiFilterConfig.push({ condition: "OR", filters });
     } else {
       multiFilterConfig.push({ condition: "OR" });
@@ -309,6 +367,9 @@ const getMultiFilterConfigFilters = (index: number) => {
 };
 
 const addInitalFilterConfig = (filter: ExtendedListingFilter) => {
+  if (filter.code === "price") {
+    filter.filterType = "range";
+  }
   if (!filter.hasOwnProperty("multiFilterCondition")) {
     filter.multiFilterCondition = "OR";
   }
@@ -316,7 +377,7 @@ const addInitalFilterConfig = (filter: ExtendedListingFilter) => {
     filter.filterType = "equalsAny";
   }
 
-  return filter.entities || filter.options;
+  return filter;
 };
 
 const updateSelectedFilterOptions = (
@@ -378,6 +439,85 @@ const setMultiFilterCondition = (group: number, value: string) => {
 
 const setFirstMultiFilterCondition = (value: string) => {
   firstFilterCondition.value = value === "OR" ? "OR" : "AND";
+  previewUpdateToggle();
+};
+
+const productAssociations = ref({
+  parent: false,
+  children: false,
+  deliveryTime: false,
+  tax: false,
+  manufacturer: true,
+  unit: false,
+  cover: false,
+  cmsPage: false,
+  canonicalProduct: false,
+  media: false,
+  crossSellings: false,
+  configuratorSettings: false,
+  productReviews: false,
+});
+
+const shippingFreeValue = ref(false);
+const activeFilters = ref({
+  manufacturer: true,
+  price: true,
+  rating: true,
+  Colour: true,
+  "shipping-free": false,
+});
+
+const getActiveFiltersFromInitialFilters = () => {
+  const initialFilters = unref(
+    getInitialFilters,
+  ) as unknown as ExtendedListingFilter[];
+  const activeInitialFilters: ExtendedListingFilter[] = [];
+  if (!initialFilters) {
+    return [];
+  }
+
+  for (const filter of initialFilters) {
+    if (!filter) {
+      continue;
+    }
+    if (activeFilters.value.hasOwnProperty(filter.name)) {
+      const extendedFilter = addInitalFilterConfig(
+        filter as ExtendedListingFilter,
+      );
+      activeInitialFilters.push(
+        extendedFilter as unknown as ExtendedListingFilter,
+      );
+    }
+  }
+
+  return activeInitialFilters;
+};
+
+const setShippingFreeFilter = (selectValue: {
+  code: string;
+  value: boolean;
+}) => {
+  shippingFreeValue.value = selectValue.value;
+  previewUpdateToggle();
+};
+
+const setPriceFilter = (event: {
+  code: string;
+  value: { min?: number; max?: number };
+}) => {
+  if (event.value.min !== undefined) {
+    price.value.min = event.value.min;
+  }
+
+  if (event.value.max !== undefined) {
+    price.value.max = event.value.max;
+  }
+
+  previewUpdateToggle();
+};
+
+const setRating = (event: { code: string; value: number }) => {
+  rating.value = event.value;
   previewUpdateToggle();
 };
 
@@ -539,6 +679,60 @@ isLoading.value = false;
         </div>
       </fieldset>
     </div>
+    <div class="block mb-4 pt-4">
+      <p>Filters to use in Filter Selection</p>
+      <div class="flex flex-wrap">
+        <template
+          v-for="filter in getInitialFilters as unknown as ExtendedListingFilter[]"
+          :key="filter.code"
+        >
+          <div class="flex items-center space-x-2 my-2 mr-4">
+            <Checkbox
+              type="checkbox"
+              :name="filter.name"
+              :id="filter.code + '_' + filter.name"
+              v-model:checked="
+                activeFilters[filter.name as keyof typeof activeFilters]
+              "
+              @update:checked="previewUpdateToggle"
+            />
+            <Label
+              :for="filter.code + '_' + filter.name"
+              class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 text-wrap"
+            >
+              {{ filter.label }}
+            </Label>
+          </div>
+        </template>
+      </div>
+    </div>
+    <div class="block my-4">
+      <p>Product-Associations</p>
+      <div class="flex flex-wrap">
+        <template
+          v-for="index in Object.keys(productAssociations)"
+          :key="index"
+        >
+          <div class="flex items-center space-x-2 my-2 mr-4">
+            <Checkbox
+              type="checkbox"
+              :name="index"
+              :id="index"
+              v-model:checked="
+                productAssociations[index as keyof typeof productAssociations]
+              "
+              @update:checked="previewUpdateToggle"
+            />
+            <Label
+              :for="index"
+              class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 text-wrap"
+            >
+              {{ index }}
+            </Label>
+          </div>
+        </template>
+      </div>
+    </div>
   </div>
   <h3 class="mt-8 scroll-m-20 text-2xl font-semibold tracking-tight">
     Filter Selection
@@ -546,13 +740,17 @@ isLoading.value = false;
   <ScrollArea class="border rounded-md w-full whitespace-nowrap">
     <div class="flex p-4 space-x-4 w-max">
       <template
-        v-for="filter in getInitialFilters as ExtendedListingFilter[]"
+        v-if="!isLoading"
+        v-for="filter in getActiveFiltersFromInitialFilters()"
         :key="filter.code"
       >
-        <fieldset class="inline w-full min-w-52 my-2">
-          <legend class="font-bold">{{ filter.label }}</legend>
+        <fieldset
+          class="inline w-full min-w-52 my-2"
+          v-if="activeFilters[filter.name as keyof typeof activeFilters]"
+        >
+          <legend class="font-bold capitalize">{{ filter.label }}</legend>
           <template
-            v-for="entity in addInitalFilterConfig(filter)"
+            v-for="entity in filter.entities || filter.options"
             :key="entity.id"
           >
             <div class="flex items-center space-x-2 my-4">
@@ -571,17 +769,26 @@ isLoading.value = false;
             </div>
           </template>
           <template v-if="filter.code.includes('price')">
-            <p class="leading-7 [&:not(:first-child)]:mt-6">
-              Custom stuff for price
-            </p>
+            <PriceFilter
+              :filter="filter"
+              :min="price.min"
+              :max="price.max"
+              @priceFilterChanged="setPriceFilter"
+            />
           </template>
           <template v-if="filter.code.includes('rating')">
-            <p class="leading-7 [&:not(:first-child)]:mt-6">
-              Custom stuff for rating
-            </p>
+            <RatingFilter
+              :filter="filter"
+              :rating="rating"
+              @ratingFilterChanged="setRating"
+            />
           </template>
           <template v-if="filter.code.includes('shipping-free')">
-            <ShippingFree :filter="filter" />
+            <ShippingFreeFilter
+              :filter="filter"
+              :shippingFree="shippingFreeValue"
+              @shippingFreeFilterChanged="setShippingFreeFilter"
+            />
           </template>
           <div
             class="my-10 pt-5 border-dashed border-t-2 mr-8"
@@ -721,6 +928,7 @@ isLoading.value = false;
           <SelectGroup>
             <SelectLabel>Order</SelectLabel>
             <template v-for="order in getSortingOrders" :key="order.key">
+              <!-- @vue-skip -->
               <SelectItem :value="order.key">{{ order.label }}</SelectItem>
             </template>
           </SelectGroup>
@@ -791,6 +999,7 @@ isLoading.value = false;
     >
       Data view
     </h2>
+    <!--  @vue-skip -->
     <p class="leading-7 [&:not(:first-child)]:mt-6">
       Elements lenght: {{ getElements.length }} | CurrentListing total:
       {{ getCurrentListing?.total }} | InitialListing total:
@@ -816,29 +1025,45 @@ isLoading.value = false;
         <div
           class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4"
         >
-          <template v-for="element in getElements" :key="element.id">
-            <ProductCard :product="element" />
+          <template
+            v-for="element in getElements as unknown as Schemas['Product'][]"
+            :key="element.id"
+          >
+            <ProductCard :product="element as unknown as Schemas['Product']" />
           </template>
+          <!--  @vue-skip -->
+          <p
+            v-if="getElements.length < 1"
+            class="leading-7 [&:not(:first-child)]:mt-6 font-bold"
+          >
+            💥 No elements found. 💥
+          </p>
         </div>
       </div>
       <div v-if="dataViewMode === 'composable'">
         <CollapseJsonPretty
           name="getInitialListing"
-          :data="getInitialListing ?? {}"
+          :data="
+            (getInitialListing as unknown as Schemas['ProductListingResult']) ??
+            {}
+          "
         />
         <CollapseJsonPretty
           name="getInitialFilters"
-          :data="getInitialFilters"
+          :data="getInitialFilters as unknown as ExtendedListingFilter[]"
         />
         <CollapseJsonPretty
           name="getCurrentFilters"
-          :data="getCurrentFilters"
+          :data="getCurrentFilters as unknown as ExtendedListingFilter[]"
         />
         <CollapseJsonPretty
           name="getAvailableFilters"
-          :data="getAvailableFilters"
+          :data="getAvailableFilters as unknown as ExtendedListingFilter[]"
         />
-        <CollapseJsonPretty name="getElements" :data="getElements" />
+        <CollapseJsonPretty
+          name="getElements"
+          :data="getElements as unknown as Schemas['Product'][]"
+        />
       </div>
     </div>
     <div class="py-5">Created with 💙 by Shopware.</div>

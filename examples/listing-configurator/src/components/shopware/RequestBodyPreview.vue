@@ -20,7 +20,10 @@ const props = defineProps<{
       v-slot="{ copy, copied }"
       :source="JSON.stringify(props.requestBodyPreview)"
     >
-      <Button variant="secondary" @click="copy()">
+      <Button
+        variant="secondary"
+        @click="copy(JSON.stringify(props.requestBodyPreview))"
+      >
         {{ copied ? "Copied" : "Copy" }}
       </Button>
     </UseClipboard>

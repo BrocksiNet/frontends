@@ -16,7 +16,7 @@ declare module "#shopware" {
     entities: Array<Schemas["ProductManufacturer"]>;
     multiFilterCondition: "AND" | "OR";
     selectedOptions: Array<string>;
-    filterType: "equals" | "equalsAny";
+    filterType: "equals" | "equalsAny" | "range";
   };
 
   export type MultiFilterConfig = {

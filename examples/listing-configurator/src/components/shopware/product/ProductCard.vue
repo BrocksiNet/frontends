@@ -11,9 +11,37 @@ import {
 
 import type { Schemas } from "#shopware";
 
-defineProps<{
+const props = defineProps<{
   product: Schemas["Product"];
 }>();
+
+const getProductProperties = () => {
+  return props.product.properties
+    ?.map((property) => property.translated?.name)
+    .join(", ");
+};
+
+const isProductPropertiesSet = () => {
+  if (!props.product.properties) {
+    return false;
+  }
+
+  return props.product.properties.length > 0;
+};
+
+const getProductOptions = () => {
+  return props.product.options
+    ?.map((option) => option.translated?.name)
+    .join(", ");
+};
+
+const isProductOptionsSet = () => {
+  if (!props.product.options) {
+    return false;
+  }
+
+  return props.product.options.length > 0;
+};
 </script>
 
 <template>
@@ -31,22 +59,16 @@ defineProps<{
             <strong>Manufacturer:</strong>
             {{ product.manufacturer?.translated?.name }}
           </li>
-          <li>
+          <li v-if="isProductPropertiesSet()">
             <strong>Properties:</strong>
-            {{
-              product.properties
-                ?.map((property) => property.translated?.name)
-                .join(", ")
-            }}
+            {{ getProductProperties() }}
           </li>
-          <li>
+          <li v-else><strong>Properties:</strong> -</li>
+          <li v-if="isProductOptionsSet()">
             <strong>Options:</strong>
-            {{
-              product.options
-                ?.map((option) => option.translated?.name)
-                .join(", ")
-            }}
+            {{ getProductOptions() }}
           </li>
+          <li v-else><strong>Options:</strong> -</li>
         </ul>
       </CardDescription>
     </CardContent>

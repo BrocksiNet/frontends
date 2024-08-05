@@ -5,18 +5,26 @@ import { Checkbox } from "@/components/ui/checkbox";
 
 const props = defineProps<{
   filter: ExtendedListingFilter;
+  shippingFree: boolean | undefined;
 }>();
 
 const emits = defineEmits<{
-  (e: "select-value", value: { code: string; value: boolean }): void;
+  (
+    e: "shipping-free-filter-changed",
+    value: { code: string; value: boolean },
+  ): void;
 }>();
 
-const currentFilterData = ref(false);
+const shippingFreeFilter = ref(false);
+if (props.shippingFree) {
+  shippingFreeFilter.value = props.shippingFree;
+}
+
 const onChangeOption = (): void => {
-  currentFilterData.value = currentFilterData.value ? false : true;
-  emits("select-value", {
+  shippingFreeFilter.value = shippingFreeFilter.value ? false : true;
+  emits("shipping-free-filter-changed", {
     code: props.filter?.code,
-    value: currentFilterData.value,
+    value: shippingFreeFilter.value,
   });
 };
 </script>
@@ -25,7 +33,7 @@ const onChangeOption = (): void => {
   <div class="flex items-center space-x-2 my-4">
     <Checkbox
       id="shipping-free"
-      v-model="currentFilterData"
+      :checked="shippingFreeFilter"
       type="checkbox"
       @update:checked="onChangeOption()"
     />
