@@ -33,22 +33,35 @@ const accordionItems = [
   {
     value: "item-3",
     title: "Can you explain shortcut filters in detail?",
-    content: "",
+    content:
+      "They are great for readabilty and easy to use. But there are some limitations like when you want to reduce the default aggregations you should use the plain filter or multi-filters. Also if you want to add own aggregations.",
   },
   {
     value: "item-4",
     title: "When should I use the plain filter?",
-    content: "",
+    content:
+      "Most of the time the plain filter is a good fit. You can add own aggregations and reduce the default aggregations works like it should. The plain-filter is a oppinionated filter mode. You can not create own filter groups.",
   },
   {
     value: "item-5",
     title: "When should I use multi-filters?",
-    content: "",
+    content:
+      "This is the most flexible filter mode. You can create multi-filter groups and add own aggregations. You should only use it if you need the flexibility. You need expert knowledge of the store API from Shopware.",
   },
 ];
 </script>
 
 <template>
+  <div
+    class="bg-orange-100 border-l-4 border-orange-500 text-orange-700 p-2 mb-8"
+    role="alert"
+  >
+    <p class="font-bold">Currently in Development</p>
+    <p>
+      This is just a preview and we know not everything is perfect. Like always,
+      but enjoy to playaround.
+    </p>
+  </div>
   <Dialog>
     <DialogTrigger as-child>
       <Button variant="outline">

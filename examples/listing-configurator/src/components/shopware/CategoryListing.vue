@@ -1,17 +1,18 @@
 <script setup lang="ts">
-import { onMounted, ref, unref, type Ref, ComputedRef, watch } from "vue";
+import { onMounted, ref, unref, type Ref, watch } from "vue";
 import type {
+  ExtendedListingFilter,
+  FilterModes,
+  MultiFilterConfig,
+  MultiFiltersConfig,
   Schemas,
   operations,
-  ExtendedListingFilter,
-  MultiFiltersConfig,
-  MultiFilterConfig,
 } from "#shopware";
 import {
   createCategoryListingContext,
+  useCategory,
   useCategoryListing,
   useCategorySearch,
-  useCategory,
 } from "#imports";
 import {
   CollapseJsonPretty,
@@ -29,6 +30,8 @@ import {
   Label,
   RadioGroup,
   RadioGroupItem,
+  ScrollArea,
+  ScrollBar,
   Select,
   SelectContent,
   SelectGroup,
@@ -36,8 +39,6 @@ import {
   SelectLabel,
   SelectTrigger,
   SelectValue,
-  ScrollArea,
-  ScrollBar,
 } from "@/components/ui";
 
 const categoryUuid = "e5320bfe6ff04505a442fb5843664947";
@@ -70,18 +71,34 @@ const requestBodyPreview = ref(
 );
 
 const firstFilterCondition: Ref<"OR" | "AND"> = ref("OR");
+const filterMode: Ref<FilterModes> = ref("shortcut-filter");
+const setFilterMode = (value: string) => {
+  if (value === "shortcut-filter") {
+    multiFilterGroups.value = -1;
+  }
+  if (value === "plain-filter") {
+    multiFilterGroups.value = 0;
+  }
+  if (value === "multi-filter") {
+    multiFilterGroups.value = 1;
+    createInitalMultiFilterConfig();
+  }
+  filterMode.value = value as FilterModes;
+  previewUpdateToggle();
+};
 const multiFilterGroups = ref(-1);
 const setMultiFilterGroupsAndInit = (value: string) => {
   multiFilterGroups.value = Number(value);
   createInitalMultiFilterConfig();
+  previewUpdateToggle();
 };
-const multiFilterGroupsMax = ref(4);
+const multiFilterGroupsMax = ref(3);
 const multiFiltersConfig: Ref<MultiFiltersConfig> = ref([]);
 
 const generateMultiFilters = () => {
   const selectedFilters: Schemas["Criteria"]["filter"] = [];
   // only one group
-  if (multiFilterGroups.value === 0) {
+  if (filterMode.value === "plain-filter") {
     const manufacturerIds = generateShortcutFilter("manufacturer");
     if (manufacturerIds) {
       selectedFilters.push({
@@ -102,6 +119,7 @@ const generateMultiFilters = () => {
   return generateMultiFiltersQueries();
 };
 
+// @ToDo: this needs more love especially rethink about the filterType
 const generateMultiFiltersQueries = () => {
   const multiFilters: Schemas["Criteria"]["filter"] = [];
   let group = 0;
@@ -114,33 +132,58 @@ const generateMultiFiltersQueries = () => {
       if (
         filter.selectedOptions &&
         filter.code === "properties" &&
-        filter.selectedOptions.length > 0 &&
-        filter.filterType === "equalsAny"
+        Object.keys(filter.selectedOptions).length > 0
       ) {
-        queries.push({
-          type: "equalsAny",
-          field: "optionIds",
-          value: filter.selectedOptions,
-        });
-        queries.push({
-          type: "equalsAny",
-          field: "propertyIds",
-          value: filter.selectedOptions,
-        });
+        if (filter.filterType === "equalsAny") {
+          queries.push({
+            type: "equalsAny",
+            field: "optionIds",
+            value: Object.keys(filter.selectedOptions).join("|"),
+          });
+          queries.push({
+            type: "equalsAny",
+            field: "propertyIds",
+            value: Object.keys(filter.selectedOptions).join("|"),
+          });
+        }
+        if (filter.filterType === "equals") {
+          Object.keys(filter.selectedOptions).forEach((optionId) => {
+            queries.push({
+              type: "equals",
+              field: "optionIds",
+              value: optionId,
+            });
+          });
+          Object.keys(filter.selectedOptions).forEach((optionId) => {
+            queries.push({
+              type: "equals",
+              field: "propertyIds",
+              value: optionId,
+            });
+          });
+        }
       }
       if (
         filter.selectedOptions &&
-        filter.code === "properties" &&
-        filter.selectedOptions.length > 0 &&
-        filter.filterType === "equals"
+        filter.code === "manufacturer" &&
+        Object.keys(filter.selectedOptions).length > 0
       ) {
-        filter.selectedOptions.forEach((optionId) => {
+        if (filter.filterType === "equalsAny") {
           queries.push({
-            type: "equals",
-            field: "optionIds",
-            value: optionId,
+            type: "equalsAny",
+            field: "manufacturerId",
+            value: Object.keys(filter.selectedOptions).join("|"),
           });
-        });
+        }
+        if (filter.filterType === "equals") {
+          Object.keys(filter.selectedOptions).forEach((optionId) => {
+            queries.push({
+              type: "equals",
+              field: "manufacturerId",
+              value: optionId,
+            });
+          });
+        }
       }
     });
     let operator = getMultiFilterConfig(group).condition;
@@ -180,17 +223,17 @@ const generatePropertiesMultiFilter = () => {
       if (
         filter.selectedOptions &&
         filter.code === "properties" &&
-        filter.selectedOptions.length > 0
+        Object.keys(filter.selectedOptions).length > 0
       ) {
         queries.push({
           type: "equalsAny",
           field: "optionIds",
-          value: filter.selectedOptions,
+          value: Object.keys(filter.selectedOptions).join(","),
         });
         queries.push({
           type: "equalsAny",
           field: "propertyIds",
-          value: filter.selectedOptions,
+          value: Object.keys(filter.selectedOptions).join(","),
         });
       }
     });
@@ -213,7 +256,9 @@ const generateShortcutFilter = (code: string = "properties") => {
   const properties: string[] = [];
   initialFilters.forEach((filter) => {
     if (filter.selectedOptions && filter.code === code) {
-      properties.push(...filter.selectedOptions);
+      Object.keys(filter.selectedOptions).forEach((optionId) => {
+        properties.push(optionId);
+      });
     }
   });
 
@@ -228,13 +273,16 @@ const generateBody = () => {
     "total-count-mode": totalCountMode.value,
   } as operations["readProductListing post /product-listing/{categoryId}"]["body"];
 
-  if (multiFilterGroups.value >= 0) {
+  if (
+    filterMode.value === "plain-filter" ||
+    filterMode.value === "multi-filter"
+  ) {
     const multiFilters =
       generateMultiFilters() as Schemas["Criteria"]["filter"];
     body = { ...body, filter: multiFilters ?? [] };
   }
 
-  if (multiFilterGroups.value === -1) {
+  if (filterMode.value === "shortcut-filter") {
     body = {
       ...body,
       properties: generateShortcutFilter(),
@@ -248,7 +296,7 @@ const generateBody = () => {
     if (activeFilters.value["rating"] !== true) {
       body = { ...body, "rating-filter": false };
     } else {
-      if (rating.value) {
+      if (rating.value && rating.value > 0) {
         body = { ...body, rating: rating.value };
       }
     }
@@ -355,7 +403,6 @@ const createInitalMultiFilterConfig = () => {
     }
   }
   multiFiltersConfig.value = multiFilterConfig;
-  previewUpdateToggle();
 };
 
 const getMultiFilterConfig = (index: number) => {
@@ -367,6 +414,9 @@ const getMultiFilterConfigFilters = (index: number) => {
 };
 
 const addInitalFilterConfig = (filter: ExtendedListingFilter) => {
+  if (!filter.hasOwnProperty("selectedOptions")) {
+    filter.selectedOptions = {};
+  }
   if (filter.code === "price") {
     filter.filterType = "range";
   }
@@ -380,18 +430,10 @@ const addInitalFilterConfig = (filter: ExtendedListingFilter) => {
   return filter;
 };
 
-const updateSelectedFilterOptions = (
-  filter: ExtendedListingFilter,
-  id: string,
-) => {
-  if (!filter.hasOwnProperty("selectedOptions")) {
-    filter.selectedOptions = [];
-  }
-  if (filter.selectedOptions.includes(id)) {
-    const index = filter.selectedOptions.indexOf(id);
-    filter.selectedOptions.splice(index, 1);
-  } else {
-    filter.selectedOptions.push(id);
+const toggleSelection = (filter: ExtendedListingFilter, id: string) => {
+  filter.selectedOptions[id] = !filter.selectedOptions[id];
+  if (filter.selectedOptions[id] === false) {
+    delete filter.selectedOptions[id];
   }
   previewUpdateToggle();
 };
@@ -443,7 +485,6 @@ const setFirstMultiFilterCondition = (value: string) => {
 };
 
 const productAssociations = ref({
-  parent: false,
   children: false,
   deliveryTime: false,
   tax: false,
@@ -456,6 +497,14 @@ const productAssociations = ref({
   crossSellings: false,
   configuratorSettings: false,
   productReviews: false,
+  mainCategories: false,
+  seoUrls: false,
+  options: true,
+  properties: true,
+  categories: false,
+  streams: false,
+  customFieldSets: false,
+  translations: false,
 });
 
 const shippingFreeValue = ref(false);
@@ -467,16 +516,14 @@ const activeFilters = ref({
   "shipping-free": false,
 });
 
+const activeInitialFilters: Ref<ExtendedListingFilter[]> = ref([]);
 const getActiveFiltersFromInitialFilters = () => {
-  const initialFilters = unref(
-    getInitialFilters,
-  ) as unknown as ExtendedListingFilter[];
-  const activeInitialFilters: ExtendedListingFilter[] = [];
-  if (!initialFilters) {
+  if (!getInitialFilters.value) {
     return [];
   }
 
-  for (const filter of initialFilters) {
+  activeInitialFilters.value = [];
+  for (const filter of getInitialFilters.value) {
     if (!filter) {
       continue;
     }
@@ -484,13 +531,11 @@ const getActiveFiltersFromInitialFilters = () => {
       const extendedFilter = addInitalFilterConfig(
         filter as ExtendedListingFilter,
       );
-      activeInitialFilters.push(
-        extendedFilter as unknown as ExtendedListingFilter,
-      );
+      activeInitialFilters.value.push(extendedFilter);
     }
   }
 
-  return activeInitialFilters;
+  return activeInitialFilters.value;
 };
 
 const setShippingFreeFilter = (selectValue: {
@@ -543,7 +588,7 @@ isLoading.value = false;
   <div class="m-2.5 ml-0">
     <div class="flex items-center space-x-2 my-4 h-[20px]">
       <div class="inline-flex m-2.5 ml-0">
-        <Label for="multiFilterGroups" class="pt-2.5 mr-2.5"
+        <Label for="filterType" class="pt-2.5 mr-2.5"
           >Filter Mode
           <a
             class="font-medium text-primary underline underline-offset-4"
@@ -553,10 +598,10 @@ isLoading.value = false;
           ></Label
         >
         <Select
-          name="multiFilterGroups"
-          id="multiFilterGroups"
-          @update:model-value="setMultiFilterGroupsAndInit"
-          default-value="-1"
+          name="filterType"
+          id="filterType"
+          @update:model-value="setFilterMode"
+          default-value="shortcut-filter"
         >
           <SelectTrigger class="w-[200px]">
             <SelectValue placeholder="Select Filter Mode" />
@@ -564,16 +609,32 @@ isLoading.value = false;
           <SelectContent>
             <SelectGroup>
               <SelectLabel>Select Filter Mode</SelectLabel>
-              <SelectItem value="-1">Shortcut Filters</SelectItem>
+              <SelectItem value="shortcut-filter">Shortcut Filter</SelectItem>
+              <SelectItem value="plain-filter">Plain Filter</SelectItem>
+              <SelectItem value="multi-filter">Multi Filter</SelectItem>
+            </SelectGroup>
+          </SelectContent>
+        </Select>
+      </div>
+      <div v-if="filterMode === 'multi-filter'" class="inline-flex m-2.5 ml-0">
+        <Label for="multiFilterGroups" class="pt-2.5 mr-2.5">Count</Label>
+        <Select
+          name="multiFilterGroups"
+          id="multiFilterGroups"
+          @update:model-value="setMultiFilterGroupsAndInit"
+          default-value="1"
+        >
+          <SelectTrigger class="w-[200px]">
+            <SelectValue placeholder="Select Filter Mode" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectGroup>
+              <SelectLabel>Count Multi Filter Groups</SelectLabel>
               <template v-for="group in multiFilterGroupsMax">
-                <SelectItem :value="'' + (group - 1)"
-                  >{{ group - 1 == 0 ? "" : group - 1 }}
+                <SelectItem :value="'' + group"
+                  >{{ group == 0 ? "" : group }}
                   {{
-                    group - 1 == 0
-                      ? "Plain Filter"
-                      : group - 1 == 1
-                        ? "Multi-Filter-Group"
-                        : "Multi-Filter-Groups"
+                    group == 1 ? "Multi-Filter-Group" : "Multi-Filter-Groups"
                   }}</SelectItem
                 >
               </template>
@@ -584,14 +645,17 @@ isLoading.value = false;
     </div>
     <div class="flex mt-4">
       <fieldset
-        v-if="multiFilterGroups > 0"
+        v-if="filterMode === 'multi-filter'"
         class="border-dashed border-2 p-5"
         :class="{
           'w-full': multiFilterGroups > 2,
           'w-7/12': multiFilterGroups < 2,
         }"
       >
-        <legend class="" v-if="multiFilterGroups == 1">
+        <legend
+          class=""
+          v-if="filterMode === 'multi-filter' && multiFilterGroups == 1"
+        >
           Multi-Filter Group 1
         </legend>
         <legend v-if="multiFilterGroups > 1">
@@ -758,7 +822,8 @@ isLoading.value = false;
                 type="checkbox"
                 :name="entity.name"
                 :id="entity.id"
-                @update:checked="updateSelectedFilterOptions(filter, entity.id)"
+                :checked="filter.selectedOptions[entity.id]"
+                @update:checked="toggleSelection(filter, entity.id)"
               />
               <Label
                 :for="entity.id"

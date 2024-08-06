@@ -7,6 +7,10 @@ declare module "#shopware" {
 
   export type ApiClient = ReturnType<typeof createAPIClient<operations>>;
 
+  interface selectedOptions {
+    [key: string]: boolean;
+  }
+
   export type ExtendedListingFilter = {
     label: string;
     code: string;
@@ -15,9 +19,11 @@ declare module "#shopware" {
     options: Array<Schemas["PropertyGroupOption"]>;
     entities: Array<Schemas["ProductManufacturer"]>;
     multiFilterCondition: "AND" | "OR";
-    selectedOptions: Array<string>;
+    selectedOptions: selectedOptions;
     filterType: "equals" | "equalsAny" | "range";
   };
+
+  export type FilterModes = "shortcut-filter" | "plain-filter" | "multi-filter";
 
   export type MultiFilterConfig = {
     condition: "AND" | "OR";

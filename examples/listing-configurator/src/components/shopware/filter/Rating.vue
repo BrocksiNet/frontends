@@ -67,6 +67,27 @@ const emits = defineEmits<{
           ></Label
         >
       </div>
+      <div class="flex items-center space-x-2">
+        <RadioGroupItem :id="'rating_0'" value="0" />
+        <Label :for="'rating_0'" class="m-1">
+          <div class="sr-only">No Rating</div>
+          <template v-for="m in maxRating" class="inline">
+            <img
+              v-if="0 > m - 1"
+              class="inline mb-0.5"
+              src="../../../assets/icons/star.svg"
+              width="15"
+            />
+            <img
+              v-else
+              class="inline mb-0.5"
+              src="../../../assets/icons/star-empty.svg"
+              width="15"
+            />
+          </template>
+          No Rating</Label
+        >
+      </div>
     </RadioGroup>
   </div>
 </template>
