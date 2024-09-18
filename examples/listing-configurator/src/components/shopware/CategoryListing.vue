@@ -16,7 +16,6 @@ import {
 } from "#imports";
 import {
   CollapseJsonPretty,
-  HelpDialog,
   PriceFilter,
   ProductCard,
   RatingFilter,
@@ -41,11 +40,13 @@ import {
   SelectValue,
 } from "@/components/ui";
 
-const categoryUuid = "e5320bfe6ff04505a442fb5843664947";
+const props = defineProps<{
+  categoryId: string;
+}>();
 
 const { search: categorySearch } = useCategorySearch();
 const categoryResponse = ref<Schemas["Category"] | null>(null);
-categoryResponse.value = await categorySearch(categoryUuid, {
+categoryResponse.value = await categorySearch(props.categoryId, {
   withCmsAssociations: true,
 });
 // @ts-ignore-next-line
@@ -392,11 +393,9 @@ onMounted(async () => {
 
 const createInitalMultiFilterConfig = () => {
   const multiFilterConfig: MultiFilterConfig[] = [];
-  for (let i = 0; i < unref(multiFilterGroups) + 1; i++) {
+  for (let i = 0; i < multiFilterGroups.value + 1; i++) {
     if (i === 0) {
-      const filters = unref(
-        getInitialFilters,
-      ) as unknown as ExtendedListingFilter[];
+      const filters = getActiveFiltersFromInitialFilters();
       multiFilterConfig.push({ condition: "OR", filters });
     } else {
       multiFilterConfig.push({ condition: "OR" });
@@ -447,15 +446,10 @@ const updateMultiFiltersConfigFilter = (
     JSON.stringify(multiFiltersConfig.value),
   ) as MultiFiltersConfig; // without reference
   // remove filter from other groups
-  tempMultiFiltersConfigValue.forEach((config) => {
-    config.filters?.forEach((configFilter) => {
-      if (configFilter.label === filter.label) {
-        const index = config.filters?.indexOf(configFilter);
-        if (index && index !== -1 && config.filters) {
-          config.filters.splice(index, 1);
-        }
-      }
-    });
+  tempMultiFiltersConfigValue.forEach((group, index) => {
+    if (index !== newGroup - 1) {
+      group.filters = group.filters?.filter((f) => f.code !== filter.code);
+    }
   });
   // add filter to new group
   if (!tempMultiFiltersConfigValue[newGroup - 1].filters) {
@@ -508,7 +502,7 @@ const productAssociations = ref({
 });
 
 const shippingFreeValue = ref(false);
-const activeFilters = ref({
+const activeFilters = ref(<Record<string, boolean>>{
   manufacturer: true,
   price: true,
   rating: true,
@@ -527,7 +521,10 @@ const getActiveFiltersFromInitialFilters = () => {
     if (!filter) {
       continue;
     }
-    if (activeFilters.value.hasOwnProperty(filter.name)) {
+    if (
+      activeFilters.value.hasOwnProperty(filter.name) &&
+      activeFilters.value[filter.name]
+    ) {
       const extendedFilter = addInitalFilterConfig(
         filter as ExtendedListingFilter,
       );
@@ -566,6 +563,11 @@ const setRating = (event: { code: string; value: number }) => {
   previewUpdateToggle();
 };
 
+const updateActiveFilters = (filter: ExtendedListingFilter) => {
+  activeFilters.value[filter.name] = !activeFilters.value[filter.name];
+  previewUpdateToggle();
+};
+
 const previewUpdateToggle = () => {
   previewNeedsUpdate.value = !previewNeedsUpdate.value;
 };
@@ -577,9 +579,6 @@ isLoading.value = false;
 </script>
 
 <template>
-  <p class="leading-7 [&:not(:first-child)]:mt-6">
-    <HelpDialog />
-  </p>
   <h2
     class="mt-10 scroll-m-20 border-b pb-2 text-3xl font-semibold tracking-tight transition-colors first:mt-0"
   >
@@ -594,9 +593,8 @@ isLoading.value = false;
             class="font-medium text-primary underline underline-offset-4"
             href="https://shopware.stoplight.io/docs/store-api/cf710bf73d0cd-search-queries#filter"
             target="_blank"
-            >ℹ️</a
-          ></Label
-        >
+            ><v-icon name="fa-info" /></a
+        ></Label>
         <Select
           name="filterType"
           id="filterType"
@@ -898,9 +896,8 @@ isLoading.value = false;
                   class="font-medium text-primary underline underline-offset-4"
                   href="https://developer.shopware.com/docs/resources/references/core-reference/dal-reference/filters-reference.html"
                   target="_blank"
-                  >ℹ️</a
-                ></Label
-              >
+                  ><v-icon name="fa-info" /></a
+              ></Label>
               <Select
                 :name="'filter-condition-type-' + filter.code"
                 :id="'filter-condition-type-' + filter.code"
@@ -938,9 +935,8 @@ isLoading.value = false;
           class="font-medium text-primary underline underline-offset-4"
           href="https://shopware.stoplight.io/docs/store-api/cf710bf73d0cd-search-queries#page--limit"
           target="_blank"
-          >ℹ️</a
-        ></Label
-      >
+          ><v-icon name="fa-info" /></a
+      ></Label>
       <Input
         name="limit"
         id="limit"
@@ -959,9 +955,8 @@ isLoading.value = false;
           class="font-medium text-primary underline underline-offset-4"
           href="https://shopware.stoplight.io/docs/store-api/cf710bf73d0cd-search-queries#page--limit"
           target="_blank"
-          >ℹ️</a
-        ></Label
-      >
+          ><v-icon name="fa-info" /></a
+      ></Label>
       <Input
         name="page"
         id="page"
@@ -982,9 +977,8 @@ isLoading.value = false;
           class="font-medium text-primary underline underline-offset-4"
           href="https://shopware.stoplight.io/docs/store-api/cf710bf73d0cd-search-queries#sort"
           target="_blank"
-          >ℹ️</a
-        ></Label
-      >
+          ><v-icon name="fa-info" /></a
+      ></Label>
       <Select name="order" id="order" v-model="order">
         <SelectTrigger class="w-[160px]">
           <SelectValue placeholder="Order" />
@@ -992,7 +986,10 @@ isLoading.value = false;
         <SelectContent>
           <SelectGroup>
             <SelectLabel>Order</SelectLabel>
-            <template v-for="order in getSortingOrders" :key="order.key">
+            <template
+              v-for="order in getSortingOrders"
+              :key="(order as unknown as Schemas['ProductSorting']).key"
+            >
               <!-- @vue-skip -->
               <SelectItem :value="order.key">{{ order.label }}</SelectItem>
             </template>
@@ -1007,8 +1004,8 @@ isLoading.value = false;
           class="font-medium text-primary underline underline-offset-4"
           href="https://shopware.stoplight.io/docs/store-api/b56ebe18277c6-searching-for-products#product-listing-criteria"
           target="_blank"
-          >ℹ️</a
-        >
+          ><v-icon name="fa-info"
+        /></a>
       </Label>
       <Select
         name="reduceAggregations"
@@ -1034,8 +1031,8 @@ isLoading.value = false;
           class="font-medium text-primary underline underline-offset-4"
           href="https://shopware.stoplight.io/docs/store-api/cf710bf73d0cd-search-queries#total-count-mode"
           target="_blank"
-          >ℹ️</a
-        >
+          ><v-icon name="fa-info"
+        /></a>
       </Label>
       <Select
         name="totalCountMode"

@@ -52,16 +52,6 @@ const accordionItems = [
 </script>
 
 <template>
-  <div
-    class="bg-orange-100 border-l-4 border-orange-500 text-orange-700 p-2 mb-8"
-    role="alert"
-  >
-    <p class="font-bold">Currently in Development</p>
-    <p>
-      This is just a preview and we know not everything is perfect. Like always,
-      but enjoy to playaround.
-    </p>
-  </div>
   <Dialog>
     <DialogTrigger as-child>
       <Button variant="outline">
@@ -94,7 +84,7 @@ const accordionItems = [
       </div>
       <DialogFooter>
         <DialogClose as-child>
-          <Button type="button" variant="secondary"> Close </Button>
+          <Button type="button" variant="secondary">Close</Button>
         </DialogClose>
       </DialogFooter>
     </DialogContent>
