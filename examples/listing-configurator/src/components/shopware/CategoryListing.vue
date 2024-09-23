@@ -1,5 +1,14 @@
 <script setup lang="ts">
 import { onMounted, ref, unref, type Ref, watch } from "vue";
+import {
+  generateFilterQueries,
+  generateManufacturerFilter,
+  generatePriceFilter,
+  generatePropertiesFilter,
+  generateRatingFilter,
+  generateShippingFreeFilter,
+  generateShortcutPriceFilter,
+} from "../../criteriaCreator";
 import type {
   ExtendedListingFilter,
   FilterModes,
@@ -16,6 +25,7 @@ import {
 } from "#imports";
 import {
   CollapseJsonPretty,
+  ConditionType,
   PriceFilter,
   ProductCard,
   RatingFilter,
@@ -108,15 +118,21 @@ const generateMultiFilters = () => {
         value: manufacturerIds,
       });
     }
-    const propertiesFilter = generatePropertiesMultiFilter();
+    const propertiesFilter = generatePlainPropertyFilter();
     if (propertiesFilter) {
       selectedFilters.push(propertiesFilter);
+    }
+
+    if (
+      activeFilters.value["price"] === true &&
+      (price.value.min !== undefined || price.value.max !== undefined)
+    ) {
+      selectedFilters.push(generatePriceFilter(price));
     }
 
     return selectedFilters;
   }
 
-  console.log("one group selectedFilters", generateMultiFiltersQueries());
   return generateMultiFiltersQueries();
 };
 
@@ -125,64 +141,38 @@ const generateMultiFiltersQueries = () => {
   const multiFilters: Schemas["Criteria"]["filter"] = [];
   let group = 0;
   do {
-    console.log("multiFiltersConfig", multiFiltersConfig.value);
+    // console.log("multiFiltersConfig", multiFiltersConfig.value);
     const filters = getMultiFilterConfigFilters(group);
     const queries: Schemas["Filters"] = [];
-    console.log("filters", filters);
     filters.forEach((filter) => {
-      if (
-        filter.selectedOptions &&
-        filter.code === "properties" &&
-        Object.keys(filter.selectedOptions).length > 0
-      ) {
-        if (filter.filterType === "equalsAny") {
-          queries.push({
-            type: "equalsAny",
-            field: "optionIds",
-            value: Object.keys(filter.selectedOptions).join("|"),
-          });
-          queries.push({
-            type: "equalsAny",
-            field: "propertyIds",
-            value: Object.keys(filter.selectedOptions).join("|"),
-          });
-        }
-        if (filter.filterType === "equals") {
-          Object.keys(filter.selectedOptions).forEach((optionId) => {
-            queries.push({
-              type: "equals",
-              field: "optionIds",
-              value: optionId,
-            });
-          });
-          Object.keys(filter.selectedOptions).forEach((optionId) => {
-            queries.push({
-              type: "equals",
-              field: "propertyIds",
-              value: optionId,
-            });
-          });
+      if (filter.code === "price") {
+        if (
+          activeFilters.value["price"] === true &&
+          (price.value.min !== undefined || price.value.max !== undefined)
+        ) {
+          queries.push(generatePriceFilter(price));
         }
       }
       if (
         filter.selectedOptions &&
-        filter.code === "manufacturer" &&
         Object.keys(filter.selectedOptions).length > 0
       ) {
-        if (filter.filterType === "equalsAny") {
-          queries.push({
-            type: "equalsAny",
-            field: "manufacturerId",
-            value: Object.keys(filter.selectedOptions).join("|"),
+        if (filter.code === "properties") {
+          const queriesProperties = generateFilterQueries(filter, [
+            "optionIds",
+            "propertyIds",
+          ]);
+          queriesProperties.forEach((query) => {
+            queries.push(query);
           });
         }
-        if (filter.filterType === "equals") {
-          Object.keys(filter.selectedOptions).forEach((optionId) => {
-            queries.push({
-              type: "equals",
-              field: "manufacturerId",
-              value: optionId,
-            });
+        if (filter.code === "manufacturer") {
+          const queriesManufacturer = generateFilterQueries(
+            filter,
+            "manufacturerId",
+          );
+          queriesManufacturer.forEach((queryManu) => {
+            queries.push(queryManu);
           });
         }
       }
@@ -199,10 +189,10 @@ const generateMultiFiltersQueries = () => {
       });
     }
     group += 1;
-    console.log("multiFilterGroups", multiFilterGroups.value);
+    // console.log("multiFilterGroups", multiFilterGroups.value);
   } while (group < multiFilterGroups.value);
 
-  console.log("multiFilters before end", multiFilters);
+  // console.log("multiFilters before end", multiFilters);
   if (multiFilters.length > 1) {
     return [
       {
@@ -216,7 +206,7 @@ const generateMultiFiltersQueries = () => {
   return multiFilters;
 };
 
-const generatePropertiesMultiFilter = () => {
+const generatePlainPropertyFilter = () => {
   const multiFilters: Schemas["Criteria"]["filter"] = [];
   multiFiltersConfig.value.forEach((config) => {
     const queries: Schemas["Filters"] = [];
@@ -226,15 +216,12 @@ const generatePropertiesMultiFilter = () => {
         filter.code === "properties" &&
         Object.keys(filter.selectedOptions).length > 0
       ) {
-        queries.push({
-          type: "equalsAny",
-          field: "optionIds",
-          value: Object.keys(filter.selectedOptions).join(","),
-        });
-        queries.push({
-          type: "equalsAny",
-          field: "propertyIds",
-          value: Object.keys(filter.selectedOptions).join(","),
+        const queriesProperties = generateFilterQueries(filter, [
+          "optionIds",
+          "propertyIds",
+        ]);
+        queriesProperties.forEach((query) => {
+          queries.push(query);
         });
       }
     });
@@ -251,11 +238,8 @@ const generatePropertiesMultiFilter = () => {
 };
 
 const generateShortcutFilter = (code: string = "properties") => {
-  const initialFilters = unref(
-    getInitialFilters,
-  ) as unknown as ExtendedListingFilter[];
   const properties: string[] = [];
-  initialFilters.forEach((filter) => {
+  (getInitialFilters.value as ExtendedListingFilter[]).forEach((filter) => {
     if (filter.selectedOptions && filter.code === code) {
       Object.keys(filter.selectedOptions).forEach((optionId) => {
         properties.push(optionId);
@@ -274,6 +258,16 @@ const generateBody = () => {
     "total-count-mode": totalCountMode.value,
   } as operations["readProductListing post /product-listing/{categoryId}"]["body"];
 
+  // filters that work with all filter modes
+  body = {
+    ...body,
+    ...generateRatingFilter(activeFilters, rating),
+    ...generateShippingFreeFilter(activeFilters, shippingFreeValue),
+    ...(reduceAggregations.value === "true" && {
+      "reduce-aggregations": "true",
+    }),
+  };
+
   if (
     filterMode.value === "plain-filter" ||
     filterMode.value === "multi-filter"
@@ -286,44 +280,13 @@ const generateBody = () => {
   if (filterMode.value === "shortcut-filter") {
     body = {
       ...body,
-      properties: generateShortcutFilter(),
-      manufacturer: generateShortcutFilter("manufacturer"),
+      ...generatePropertiesFilter(generateShortcutFilter()),
+      ...generateManufacturerFilter(
+        activeFilters,
+        generateShortcutFilter("manufacturer"),
+      ),
+      ...generateShortcutPriceFilter(activeFilters, price),
     };
-
-    if (activeFilters.value["shipping-free"] !== true) {
-      body = { ...body, "shipping-free-filter": false };
-    }
-
-    if (activeFilters.value["rating"] !== true) {
-      body = { ...body, "rating-filter": false };
-    } else {
-      if (rating.value && rating.value > 0) {
-        body = { ...body, rating: rating.value };
-      }
-    }
-
-    if (activeFilters.value["price"] !== true) {
-      body = { ...body, "price-filter": false };
-    } else {
-      if (price.value.min) {
-        body = { ...body, "min-price": price.value.min };
-      }
-      if (price.value.max) {
-        body = { ...body, "max-price": price.value.max };
-      }
-    }
-
-    if (activeFilters.value["manufacturer"] !== true) {
-      body = { ...body, "manufacturer-filter": false };
-    }
-
-    if (activeFilters.value["shipping-free"] && shippingFreeValue.value) {
-      body = { ...body, "shipping-free": shippingFreeValue.value };
-    }
-  }
-
-  if (reduceAggregations.value === "true") {
-    body = { ...body, "reduce-aggregations": "true" };
   }
 
   if (productAssociations.value) {
@@ -460,11 +423,11 @@ const updateMultiFiltersConfigFilter = (
   previewUpdateToggle();
 };
 
-const updateFilterConditionType = (
-  filter: ExtendedListingFilter,
-  value: string,
-) => {
-  filter.filterType = value == "equals" ? "equals" : "equalsAny";
+const updateFilterConditionType = (event: {
+  filter: ExtendedListingFilter;
+  value: string;
+}) => {
+  event.filter.filterType = event.value == "equals" ? "equals" : "equalsAny";
   previewUpdateToggle();
 };
 
@@ -564,7 +527,10 @@ const setRating = (event: { code: string; value: number }) => {
 };
 
 const updateActiveFilters = (filter: ExtendedListingFilter) => {
-  activeFilters.value[filter.name] = !activeFilters.value[filter.name];
+  if (!activeFilters.value[filter.name]) {
+    filter.selectedOptions = {}; // this removes the selected options for properties filters
+  }
+  createInitalMultiFilterConfig();
   previewUpdateToggle();
 };
 
@@ -756,7 +722,7 @@ isLoading.value = false;
               v-model:checked="
                 activeFilters[filter.name as keyof typeof activeFilters]
               "
-              @update:checked="previewUpdateToggle"
+              @update:checked="updateActiveFilters(filter)"
             />
             <Label
               :for="filter.code + '_' + filter.name"
@@ -855,7 +821,10 @@ isLoading.value = false;
           </template>
           <div
             class="my-10 pt-5 border-dashed border-t-2 mr-8"
-            v-if="multiFilterGroups > 0"
+            v-if="
+              multiFilterGroups > 0 &&
+              (filter.code === 'properties' || filter.code === 'manufacturer')
+            "
           >
             <div class="mt-2.5" v-if="multiFilterGroups > 1">
               <Label
@@ -888,33 +857,17 @@ isLoading.value = false;
               </Select>
             </div>
             <div class="mt-2.5" v-if="multiFilterGroups > 0">
-              <Label
-                class="text-slate-500"
-                :for="'filter-condition-type-' + filter.code"
-                >Condition Type
-                <a
-                  class="font-medium text-primary underline underline-offset-4"
-                  href="https://developer.shopware.com/docs/resources/references/core-reference/dal-reference/filters-reference.html"
-                  target="_blank"
-                  ><v-icon name="fa-info" /></a
-              ></Label>
-              <Select
-                :name="'filter-condition-type-' + filter.code"
-                :id="'filter-condition-type-' + filter.code"
-                @update:model-value="updateFilterConditionType(filter, $event)"
-                default-value="equalsAny"
+              <template
+                v-if="
+                  filter.code === 'properties' || filter.code === 'manufacturer'
+                "
               >
-                <SelectTrigger class="w-[120px]">
-                  <SelectValue placeholder="Condition Type" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    <SelectLabel>Condition Type</SelectLabel>
-                    <SelectItem value="equalsAny">equalsAny</SelectItem>
-                    <SelectItem value="equals">equals</SelectItem>
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
+                <ConditionType
+                  :filter="filter"
+                  :conditionTypes="['equalsAny', 'equals']"
+                  @condition-type-changed="updateFilterConditionType($event)"
+                ></ConditionType>
+              </template>
             </div>
           </div>
         </fieldset>
